@@ -10,13 +10,13 @@
 
 #include "res_limits.h"
 
-#define MB (1024UL * 1024UL) // ---> doubt
+#define MB (1024UL * 1024UL) 
 
 #define CHILD_LIMIT_ENFORCED 0
 #define CHILD_LIMIT_IGNORED 4
 #define CHILD_SETUP_FAILED 5
 
-static void print_limit(const char* label, int resource) { // ---> doubt : why is the return type static
+static void print_limit(const char* label, int resource) { 
 
     struct rlimit rl;
 
@@ -27,7 +27,7 @@ static void print_limit(const char* label, int resource) { // ---> doubt : why i
     }
 
     // printing soft and hard resource limits
-    printf("  %s: soft=", label); // doubt -- what is hard resource and what is soft?
+    printf("  %s: soft=", label); 
     if (rl.rlim_cur == RLIM_INFINITY) printf("unlimited");
     else printf("%lu", (unsigned long)rl.rlim_cur);
     printf(", hard=");
@@ -36,10 +36,9 @@ static void print_limit(const char* label, int resource) { // ---> doubt : why i
 }
 
 static int wait_for_child(pid_t pid, int * status) {
-    while(waitpid(pid, status, 0) < 0) { // doubt : what does waitpid function return?
-
+    while(waitpid(pid, status, 0) < 0) { 
         // error handling : waitpid
-        if(errno != EINTR) { // doubt : what is EINTR? and what is about this condition?
+        if(errno != EINTR) { 
             fprintf(stderr, "Error: waitpid failed: %s\n", stderror(errno));
             return -1;
         }
@@ -48,11 +47,11 @@ static int wait_for_child(pid_t pid, int * status) {
     return 0;
 }
 
-static void memory_child(void) { // doubt : what does this function do?
+static void memory_child(void) { 
 
     struct rlimit rl = { 100 * MB, 100 * MB };   /* 100 MB address space */
 
-    print_limit("after ", RLIMIT_AS); // doubt : what is RLIMIT_AS
+    print_limit("after ", RLIMIT_AS); 
 
     printf("  [child] requesting 20 MB (inside the limit)...\n");
     void *small = malloc(20 * MB);
