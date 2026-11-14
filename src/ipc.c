@@ -34,7 +34,7 @@ typedef struct {
     int  value;
     int  last;
     long result;
-} MailBox;
+} Mailbox;
 
 static const int ITEMS[NUM_ITEMS] = {10, 20, 30, 40, 50};
 
@@ -46,8 +46,8 @@ static void unlink_all(void) {
 
 }
 
-static void child_main(void)
-{
+static void child_main(void) {
+    
     int fd = shm_open(SHM_NAME, O_RDWR, 0);
     if (fd < 0) { perror("  [child] shm_open"); _exit(1); }
     Mailbox *mb = mmap(NULL, sizeof *mb, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
