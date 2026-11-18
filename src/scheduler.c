@@ -1,9 +1,6 @@
-
 #include <stdio.h>
 #include <stdlib.h>
 #include "scheduler.h"
-
-#define MAX_JOBS 100
 
 // Sort jobs according to arrival time
 void sortJobsByArrival(Job jobs[], int n)

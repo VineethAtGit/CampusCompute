@@ -1,11 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "C:\Users\Lenovo\Desktop\Sem 3\os\os project\CampusCompute\include\job.h"
+#include "job.h"
 #define MAX_JOBS 100
-
-int main(){
-    return 0;
-}
 
 void initializeJobs(Job jobs[], int n){
     for(int i=0; i<n ; i++){
