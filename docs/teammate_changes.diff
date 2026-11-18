@@ -1,0 +1,35 @@
+--- original/job.c	2026-11-18 06:29:18.608695000 +0000
++++ fixed/job.c	2026-11-18 06:32:05.838434755 +0000
+@@ -3,10 +3,6 @@
+ #include "job.h"
+ #define MAX_JOBS 100
+ 
+-int main(){
+-    return 0;
+-}
+-
+ void initializeJobs(Job jobs[], int n){
+     for(int i=0; i<n ; i++){
+         jobs[i].remaining_time = jobs[i].burst_time;
+@@ -91,7 +87,7 @@
+     if(job == NULL)
+         return 0;
+     int index = job - jobs;
+-    for(int i = index; i < n-1; i++){
++    for(int i = index; i < *n - 1; i++){
+         jobs[i] = jobs[i + 1];
+     }
+     (*n)--;
+--- original/scheduler.c	2026-11-18 06:29:40.030651000 +0000
++++ fixed/scheduler.c	2026-11-18 06:32:05.838713335 +0000
+@@ -12,7 +12,9 @@
+     {
+         for (int j = 0; j < n - i - 1; j++)
+         {
+-            if (jobs[j].arrival_time > jobs[j + 1].arrival_time)
++            if (jobs[j].arrival_time > jobs[j + 1].arrival_time ||
++                (jobs[j].arrival_time == jobs[j + 1].arrival_time &&
++                 jobs[j].job_id > jobs[j + 1].job_id))
+             {
+                 Job temp = jobs[j];
+                 jobs[j] = jobs[j + 1];

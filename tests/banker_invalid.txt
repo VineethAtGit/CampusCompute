@@ -1,0 +1,10 @@
+# maximum < allocation for P0 -> invalid state
+2 1
+# Available
+1
+# Allocation
+5
+1
+# Maximum
+3
+2
