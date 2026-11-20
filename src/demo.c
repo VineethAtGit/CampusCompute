@@ -1,75 +1,74 @@
+/* FR8 integrated demonstration  (Owner: You)
+ *
+ * Runs every feature in a fixed order by calling each module's entry
+ * function exactly as main.c would, then prints a PASS/FAIL summary and
+ * checks that nothing was left behind (child processes, IPC objects).
+ */
 #include <errno.h>
 #include <fcntl.h>
 #include <semaphore.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
-#include <stdio.h>
+#include <unistd.h>
 
 #include "demo.h"
-#include "ipc.h"
-#include "scheduler.h"
-#include "banker.h"
+#include "adapters.h"
 #include "logger.h"
-#include "worker.h"
+#include "ipc.h"
 #include "res_limits.h"
 
-#define JOBS_FILE           "tests/jobs.txt"
-#define BAD_JOBS_FILE       "tests/invalid_jobs.txt"
-#define BANKER_SAFE_FILE    "tests/banker_safe.txt" 
-#define BANKER_BAD_FILE     "tests/banker_unsafe.txt"
+#define JOBS_FILE         "tests/jobs.txt"
+#define BAD_JOBS_FILE     "tests/invalid_jobs.txt"
+#define BANKER_SAFE_FILE  "tests/banker_safe.txt"
+#define BANKER_BAD_FILE   "tests/banker_unsafe.txt"
 
 typedef int (*EntryFn)(int, char **);
 
 typedef struct {
-
-    const char  *title;
-    EntryFn     fn;
+    const char *title;      /* shown in the banner and the summary     */
+    EntryFn     fn;         /* module entry function                   */
     int         argc;
-    char        *argv[4];
-    int         expected;
+    char       *argv[4];    /* arguments exactly as main.c would pass  */
+    int         expected;   /* return code that means "worked"         */
     int         actual;
 } Step;
 
-static int check_leftovers(void) {
-
+/* Returns the number of leftover resources (0 = clean). */
+static int check_leftovers(void)
+{
     int leaks = 0;
 
-    if(waitpid(-1, NULL, WNOHANG) == -1 && errno == ECHILD) {
-        printf("    verified: no child process still left (no zombies)\n");
-    } else {
-        printf("    LEAK: a child process still exists\n");
+    /* ECHILD means "no children at all": every worker was reaped. */
+    if (waitpid(-1, NULL, WNOHANG) == -1 && errno == ECHILD)
+        printf("  verified: no child processes left (no zombies)\n");
+    else {
+        printf("  LEAK: a child process still exists\n");
         leaks++;
     }
 
     int fd = shm_open("/campus_shm", O_RDONLY, 0);
-    if(fd >= 0) {
-        close(fd);
-        printf("    LEAK: /campus_shm exists\n");
-        leaks++;
-    } else {
-        printf("    verified: shared memory /campus_shm is good\n");
-    }
+    if (fd >= 0) { close(fd); printf("  LEAK: /campus_shm exists\n"); leaks++; }
+    else printf("  verified: shared memory /campus_shm is gone\n");
 
     sem_t *s1 = sem_open("/campus_sem_empty", 0);
     sem_t *s2 = sem_open("/campus_sem_full", 0);
-    if(s1 != SEM_FAILED || s2 != SEM_FAILED) {
+    if (s1 != SEM_FAILED || s2 != SEM_FAILED) {
         if (s1 != SEM_FAILED) sem_close(s1);
         if (s2 != SEM_FAILED) sem_close(s2);
         printf("  LEAK: a named semaphore still exists\n");
         leaks++;
-    } else {
-        printf("    verified: named semaphores are gone\n");
-    }
+    } else printf("  verified: named semaphores are gone\n");
 
     return leaks;
 }
 
-int run_demo(int argc, char** argv) {
-    if(argc > 1) {
-        fprintf(stderr, "Error: 'demo' takes no arguements (got '%s)\n"
+int run_demo(int argc, char **argv)
+{
+    if (argc > 1) {
+        fprintf(stderr, "Error: 'demo' takes no arguments (got '%s')\n"
                         "Usage: campuscompute demo\n", argv[1]);
-
         return 2;
     }
 
@@ -88,11 +87,10 @@ int run_demo(int argc, char** argv) {
         /* bad input must be rejected with usage code 2 */
         { "Invalid input is rejected",     run_sched,  3, { "sched", "fcfs", BAD_JOBS_FILE },2, 0 },
     };
-
     int n = (int)(sizeof steps / sizeof steps[0]);
 
     printf("##########  CampusCompute integrated demonstration  ##########\n");
-    for(int i = 0; i < n; i++) {
+    for (int i = 0; i < n; i++) {
         printf("\n---------- Step %d/%d: %s ----------\n", i + 1, n, steps[i].title);
         fflush(stdout);
         steps[i].actual = steps[i].fn(steps[i].argc, steps[i].argv);
@@ -113,9 +111,8 @@ int run_demo(int argc, char** argv) {
     }
     printf("  Cleanup (processes + IPC)       %s\n", leaks == 0 ? "PASS" : "FAIL");
     printf("\n  %d of %d steps passed.\n", passed, n);
- 
+
     int all_ok = (passed == n && leaks == 0);
     printf("  Overall: %s\n", all_ok ? "ALL TESTS PASSED" : "SOME TESTS FAILED");
-    
     return all_ok ? 0 : 1;
 }

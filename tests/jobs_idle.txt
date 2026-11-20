@@ -1,0 +1,4 @@
+# CPU sits idle between job 1 and job 2
+# id arrival burst priority
+1 0 2 1
+2 10 3 1

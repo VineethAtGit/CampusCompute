@@ -12,7 +12,9 @@ void sortJobsByArrival(Job jobs[], int n)
     {
         for (int j = 0; j < n - i - 1; j++)
         {
-            if (jobs[j].arrival_time > jobs[j + 1].arrival_time)
+            if (jobs[j].arrival_time > jobs[j + 1].arrival_time ||
+                (jobs[j].arrival_time == jobs[j + 1].arrival_time &&
+                 jobs[j].job_id > jobs[j + 1].job_id))
             {
                 Job temp = jobs[j];
                 jobs[j] = jobs[j + 1];

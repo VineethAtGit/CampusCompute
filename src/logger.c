@@ -1,54 +1,67 @@
+/* FR3 concurrent activity logger  (Owner: You)
+ *
+ * Bounded producer-consumer queue built with POSIX threads:
+ *   - several producer threads create log events and push them into a
+ *     small circular queue (capacity QUEUE_CAP),
+ *   - one consumer thread pops events and writes them to logs/campus.log,
+ *   - a mutex protects the queue; two condition variables handle the
+ *     "queue full" (producers wait) and "queue empty" (consumer waits) cases,
+ *   - a special poison-pill entry tells the consumer to stop, so every
+ *     thread ends cleanly and can be joined.
+ */
 #include <errno.h>
-#include <string.h>
-#include <sys/types.h>
 #include <pthread.h>
-#include <sys/stat.h>
 #include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <time.h>
 
 #include "logger.h"
 
-#define QUEUE_CAP           4
-#define NUM_PRODUCERS       3
-#define MSGS_PER_PRODUCER   5
-#define LOG_PATH            "logs/campus.log"
+#define QUEUE_CAP          4    /* small on purpose, so "full" really happens */
+#define NUM_PRODUCERS      3
+#define MSGS_PER_PRODUCER  5
+#define LOG_PATH           "logs/campus.log"
 
 typedef struct {
-    int     producer;
-    int     seq;
-    int     poison;
-    char    text[64];
+    int  producer;       /* which producer made it (1..NUM_PRODUCERS)   */
+    int  seq;            /* per-producer sequence number                */
+    int  poison;         /* 1 = shutdown marker, not a real event       */
+    char text[64];
 } LogEntry;
 
 typedef struct {
     LogEntry        buf[QUEUE_CAP];
     int             head, tail, count;
     pthread_mutex_t lock;
-    pthread_cond_t  not_full;
-    pthread_cond_t  not_empty;
-    FILE            *log;
-    int             produced;
-    int             consumed;
+    pthread_cond_t  not_full;     /* producers wait on this */
+    pthread_cond_t  not_empty;    /* consumer waits on this */
+    FILE           *log;
+    int             produced;     /* real events pushed (under lock)      */
+    int             consumed;     /* real events written (consumer only)  */
 } Queue;
 
 typedef struct {
     Queue *q;
-    int   id;
+    int    id;
 } ProducerArg;
 
-static void sleep_ms(long ms) {
-    struct timespec ts = {ms / 1000, (ms % 1000) * 1000000L};
+static void sleep_ms(long ms)
+{
+    struct timespec ts = { ms / 1000, (ms % 1000) * 1000000L };
     nanosleep(&ts, NULL);
 }
 
-static void queue_push(Queue *q, const LogEntry *e) {
+/* Push one entry; blocks while the queue is full. */
+static void queue_push(Queue *q, const LogEntry *e)
+{
     pthread_mutex_lock(&q->lock);
-    if(q->count == QUEUE_CAP && !e->poison) {
-        printf("    [producer %d] queue FULL (%d/%d), waiting...n", 
-                e->producer, q->count, QUEUE_CAP);
-    }
-    while(q->count == QUEUE_CAP)
-            pthread_cond_wait(&q->not_full, &q->lock);
+    if (q->count == QUEUE_CAP && !e->poison)
+        printf("  [producer %d] queue FULL (%d/%d), waiting...\n",
+               e->producer, q->count, QUEUE_CAP);
+    while (q->count == QUEUE_CAP)                 /* loop guards spurious wakeups */
+        pthread_cond_wait(&q->not_full, &q->lock);
 
     q->buf[q->tail] = *e;
     q->tail = (q->tail + 1) % QUEUE_CAP;
@@ -62,11 +75,13 @@ static void queue_push(Queue *q, const LogEntry *e) {
     pthread_mutex_unlock(&q->lock);
 }
 
-static LogEntry queue_pop(Queue *q) {
+/* Pop one entry; blocks while the queue is empty. */
+static LogEntry queue_pop(Queue *q)
+{
     pthread_mutex_lock(&q->lock);
-    while(q->count == 0)
+    while (q->count == 0)
         pthread_cond_wait(&q->not_empty, &q->lock);
-    
+
     LogEntry e = q->buf[q->head];
     q->head = (q->head + 1) % QUEUE_CAP;
     q->count--;
@@ -75,17 +90,19 @@ static LogEntry queue_pop(Queue *q) {
     return e;
 }
 
-static void *producer_thread(void *arg) {
+static void *producer_thread(void *arg)
+{
     ProducerArg *pa = arg;
-    for(int i = 1; i <= MSGS_PER_PRODUCER; i++) {
+    for (int i = 1; i <= MSGS_PER_PRODUCER; i++) {
         LogEntry e;
         memset(&e, 0, sizeof e);
         e.producer = pa->id;
         e.seq = i;
         snprintf(e.text, sizeof e.text, "worker %d reported step %d", pa->id, i);
         queue_push(pa->q, &e);
-
+        sleep_ms(10L * pa->id);           /* producers run at different speeds */
     }
+    return NULL;
 }
 
 static void *consumer_thread(void *arg)
@@ -94,13 +111,13 @@ static void *consumer_thread(void *arg)
     for (;;) {
         LogEntry e = queue_pop(q);
         if (e.poison) break;              /* shutdown marker: stop cleanly */
- 
+
         char stamp[32];
         time_t now = time(NULL);
         struct tm tmv;
         localtime_r(&now, &tmv);
         strftime(stamp, sizeof stamp, "%Y-%m-%d %H:%M:%S", &tmv);
- 
+
         fprintf(q->log, "%s [P%d #%d] %s\n", stamp, e.producer, e.seq, e.text);
         fflush(q->log);
         q->consumed++;
@@ -117,12 +134,12 @@ int run_logger(int argc, char **argv)
                         "Usage: campuscompute logger\n", argv[1]);
         return 2;
     }
- 
+
     if (mkdir("logs", 0755) != 0 && errno != EEXIST) {
         fprintf(stderr, "Error: cannot create logs/ directory: %s\n", strerror(errno));
         return 1;
     }
- 
+
     Queue q;
     memset(&q, 0, sizeof q);
     q.log = fopen(LOG_PATH, "w");
@@ -133,16 +150,16 @@ int run_logger(int argc, char **argv)
     pthread_mutex_init(&q.lock, NULL);
     pthread_cond_init(&q.not_full, NULL);
     pthread_cond_init(&q.not_empty, NULL);
- 
+
     printf("=== Concurrent logger: %d producers, queue capacity %d, 1 consumer ===\n",
            NUM_PRODUCERS, QUEUE_CAP);
     fprintf(q.log, "# CampusCompute event log\n");
- 
+
     int rc = 0;
     pthread_t consumer, producers[NUM_PRODUCERS];
     ProducerArg args[NUM_PRODUCERS];
     int started = 0;
- 
+
     if (pthread_create(&consumer, NULL, consumer_thread, &q) != 0) {
         fprintf(stderr, "Error: cannot create consumer thread\n");
         rc = 1;
@@ -158,27 +175,27 @@ int run_logger(int argc, char **argv)
         }
         started++;
     }
- 
+
     for (int i = 0; i < started; i++)         /* wait for every producer */
         pthread_join(producers[i], NULL);
- 
+
     LogEntry pill;
     memset(&pill, 0, sizeof pill);
     pill.poison = 1;
     queue_push(&q, &pill);                    /* tell consumer to finish */
     pthread_join(consumer, NULL);
- 
+
     printf("\nAll %d producers and the consumer have been joined.\n", started);
     printf("Events produced: %d, events written to log: %d\n", q.produced, q.consumed);
     fprintf(q.log, "# end of log: %d entries\n", q.consumed);
- 
+
     if (rc == 0 && (q.produced != q.consumed ||
                     q.produced != NUM_PRODUCERS * MSGS_PER_PRODUCER)) {
         fprintf(stderr, "Error: produced and consumed counts do not match\n");
         rc = 1;
     }
     printf("Result: %s\n", rc == 0 ? "PASS" : "FAIL");
- 
+
 cleanup:
     pthread_cond_destroy(&q.not_full);
     pthread_cond_destroy(&q.not_empty);

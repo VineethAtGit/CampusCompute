@@ -1,5 +1,6 @@
 build/
-binary
-*.log
+campuscompute
+*.o
+logs/*.log
 *.pdf
 *.zip
